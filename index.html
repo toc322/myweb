@@ -1,12 +1,55 @@
-<html>
-<head>
-<script src="//jwpsrv.com/library/O4mPlqeTEeK_viIACpYGxA.js"></script>
-<div id="my-video">
-</div>
-<script>// <![CDATA[
-jwplayer('my-video').setup({file: 'http://ah02.modhospital.kr:9981/stream/channelid/81?ticket=997F7FD47DBD8B99BF8930F97F6147D8539DA28F', width: '100%', height: '450', autostart: 'false', image: '', primary: 'html5', hlshtml: 'true' });
-// ]]>
-<!--www.techedubyte.com-->
-</script>
-</head>
+<!DOCTYPE html>
+<html class="no-js">
+  <head>
+    <meta charset="utf-8">
+    <title>FAImaison - CloudFrancois</title>
+    <meta name="description" content="">
+    <style>
+      /* Responsive video */
+      video { 
+        max-width: 100%;
+        height: auto;
+      }
+
+      /* faimaison style */
+      body {
+        background: #37455b;
+        color: #cedbf0;
+      }
+      h1, a {
+        color: #b4d931;
+      }
+      video {
+        border: 1px solid #485a74;
+      }
+    </style>
+  </head>
+  <body>
+
+    <h1>FAImaison</h1>
+    <video id="video"controls loop autoplay width="640" data-playlist="http://ah02.modhospital.kr:9981/playlist/channels"></video>
+
+    <p>
+    <button id="video-next-source">Next source</button>
+    <button id="video-randomize-source">Random source</button>
+    </p>
+
+    <p>
+    <strong>Playlist&nbsp;:</strong> <a href="http://ah02.modhospital.kr:9981/playlist/channels">http://ah02.modhospital.kr:9981/playlist/channels</a></li>
+    </p>
+
+    <script src="m3uStreamPlayer.js"></script>
+    <script>m3uStreamPlayer.init({selector: '#video', debug: true});</script>
+    <script>
+
+      /**
+       * Buttons
+       */
+      var buttonNextSource = document.querySelector('#video-next-source');
+      var buttonRandomizeSource = document.querySelector('#video-randomize-source');
+      buttonNextSource.addEventListener('click', function(){ m3uStreamPlayer.nextSource(document.querySelector('#video')); })
+      buttonRandomizeSource.addEventListener('click', function(){ v.randomizeSource(document.querySelector('#video')); })
+
+    </script>
+  </body>
 </html>
