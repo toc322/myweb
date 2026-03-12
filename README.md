@@ -1,1 +1,163 @@
-# myweb
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>IPTV Player</title>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<style>
+body{
+    font-family: Arial;
+    background:#111;
+    color:white;
+    margin:0;
+}
+
+#container{
+    display:flex;
+    height:100vh;
+}
+
+#channels{
+    width:300px;
+    overflow-y:auto;
+    background:#1a1a1a;
+}
+
+.channel{
+    padding:10px;
+    border-bottom:1px solid #333;
+    cursor:pointer;
+}
+
+.channel:hover{
+    background:#333;
+}
+
+#player{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+video{
+    width:90%;
+    height:90%;
+    background:black;
+}
+</style>
+</head>
+
+<body>
+
+<div id="container">
+
+<div id="channels"></div>
+
+<div id="player">
+<video id="video" controls autoplay></video>
+</div>
+
+</div>
+
+<script>
+
+// Base64로 숨긴 M3U 주소
+const encodedURL = "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3RvYzMyMi9ydWF0YXJ1bWFtM3UvbWFpbi90dmprdHYubTN1"
+
+// 디코딩
+const m3uUrl = atob(encodedURL)
+
+let channels = []
+
+async function loadChannels(){
+
+    try{
+
+        const res = await fetch(m3uUrl)
+
+        if(!res.ok){
+            console.error("M3U 로드 실패:", res.status)
+            return
+        }
+
+        const text = await res.text()
+
+        const lines = text.split("\n")
+
+        channels = []
+
+        for(let i=0;i<lines.length;i++){
+
+            if(lines[i].startsWith("#EXTINF")){
+
+                // 마지막 , 뒤 채널 이름
+                let name = lines[i].substring(lines[i].lastIndexOf(",")+1).trim()
+                let url = lines[i+1].trim()
+
+                channels.push({
+                    name:name,
+                    url:url
+                })
+
+            }
+
+        }
+
+        showChannels(channels)
+
+    }catch(err){
+        console.error("채널 로드 오류:", err)
+    }
+
+}
+
+function showChannels(list){
+
+    const container = document.getElementById("channels")
+
+    // 중복 방지
+    container.innerHTML=""
+
+    list.forEach(ch => {
+
+        let div = document.createElement("div")
+        div.className="channel"
+        div.innerText=ch.name
+
+        div.onclick=()=>{
+            play(ch.url)
+        }
+
+        container.appendChild(div)
+
+    })
+
+}
+
+function play(url){
+
+    const video = document.getElementById("video")
+
+    if(Hls.isSupported()){
+
+        const hls = new Hls()
+        hls.loadSource(url)
+        hls.attachMedia(video)
+
+    }else{
+
+        video.src = url
+
+    }
+
+}
+
+loadChannels()
+
+</script>
+
+</body>
+</html>
