@@ -64,10 +64,9 @@ video{
 
 <script>
 
-// Base64로 숨긴 M3U 주소
+
 const encodedURL = "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3RvYzMyMi9ydWF0YXJ1bWFtM3UvbWFpbi90dmprdHYubTN1"
 
-// 디코딩
 const m3uUrl = atob(encodedURL)
 
 let channels = []
@@ -93,7 +92,6 @@ async function loadChannels(){
 
             if(lines[i].startsWith("#EXTINF")){
 
-                // 마지막 , 뒤 채널 이름
                 let name = lines[i].substring(lines[i].lastIndexOf(",")+1).trim()
                 let url = lines[i+1].trim()
 
@@ -160,4 +158,5 @@ loadChannels()
 </script>
 
 </body>
+
 </html>
