@@ -8,9 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 
 <style>
-* {
-    box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
     font-family: Arial, sans-serif;
@@ -57,6 +55,7 @@ body {
     margin-top: 8px;
     font-size: 12px;
     color: #aaa;
+    line-height: 1.4;
 }
 
 #channels {
@@ -71,13 +70,8 @@ body {
     overflow-wrap: anywhere;
 }
 
-.channel:hover {
-    background: #333;
-}
-
-.channel.active {
-    background: #164b83;
-}
+.channel:hover { background: #333; }
+.channel.active { background: #164b83; }
 
 #main {
     flex: 1;
@@ -95,6 +89,7 @@ body {
 #channelTitle {
     font-weight: bold;
     margin-bottom: 6px;
+    overflow-wrap: anywhere;
 }
 
 #status {
@@ -103,9 +98,7 @@ body {
     overflow-wrap: anywhere;
 }
 
-#status.error {
-    color: #ff7777;
-}
+#status.error { color: #ff7777; }
 
 #videoArea {
     flex: 1;
@@ -138,25 +131,22 @@ video {
         min-width: 130px;
     }
 
-    #header {
-        padding: 10px;
-    }
-
-    #header h2 {
-        font-size: 16px;
-    }
+    #header { padding: 10px; }
+    #header h2 { font-size: 16px; }
 
     .channel {
         padding: 10px 8px;
         font-size: 13px;
     }
+
+    #playerHeader { padding: 10px; }
+    #videoArea { padding: 4px; }
 }
 </style>
 </head>
 
 <body>
 <div id="container">
-
     <aside id="sidebar">
         <div id="header">
             <h2>IPTV 채널</h2>
@@ -165,7 +155,6 @@ video {
                    autocomplete="off">
             <div id="channelCount">목록을 불러오는 중...</div>
         </div>
-
         <div id="channels"></div>
     </aside>
 
@@ -176,24 +165,21 @@ video {
         </div>
 
         <div id="videoArea">
-            <video id="video" controls playsinline
-                   preload="auto"></video>
+            <video id="video" controls playsinline preload="auto"></video>
         </div>
 
         <div id="hint">
-            재생 오류가 발생하면 위의 상태 메시지를 확인하세요.
+            jmp2.uk 주소는 채널 목록에서 제외됩니다. 재생 오류가 발생하면 상태 메시지를 확인하세요.
         </div>
     </main>
-
 </div>
 
 <script>
 "use strict";
 
-// M3U 재생 목록
+// M3U 재생 목록 URL
 const encodedURL =
     "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3RvYzMyMi9ydWF0YXJ1bWFtM3UvbWFpbi90dmprdHYubTN1";
-
 const m3uUrl = atob(encodedURL);
 
 const video = document.getElementById("video");
@@ -206,7 +192,6 @@ const searchEl = document.getElementById("search");
 let channels = [];
 let hls = null;
 let selectedUrl = "";
-let selectedElement = null;
 
 function setStatus(message, isError = false) {
     statusEl.textContent = message;
@@ -224,14 +209,25 @@ function destroyPlayer() {
     video.load();
 }
 
-// M3U 파일 읽기
+// jmp2.uk 및 하위 도메인 주소인지 확인
+function isExcludedUrl(url) {
+    try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+
+        return host === "jmp2.uk" || host.endsWith(".jmp2.uk");
+    } catch {
+        // 잘못된 URL은 재생 목록에 넣지 않음
+        return true;
+    }
+}
+
+// M3U 파일 읽기 및 jmp2.uk 주소 제외
 async function loadChannels() {
     countEl.textContent = "목록을 불러오는 중...";
 
     try {
-        const response = await fetch(m3uUrl, {
-            cache: "no-store"
-        });
+        const response = await fetch(m3uUrl, { cache: "no-store" });
 
         if (!response.ok) {
             throw new Error("M3U HTTP 오류: " + response.status);
@@ -245,6 +241,7 @@ async function loadChannels() {
 
         channels = [];
         let currentName = "";
+        let excludedCount = 0;
 
         for (const line of lines) {
             if (line.startsWith("#EXTINF")) {
@@ -257,41 +254,47 @@ async function loadChannels() {
                 line &&
                 !line.startsWith("#")
             ) {
-                channels.push({
-                    name: currentName,
-                    url: line
-                });
+                if (isExcludedUrl(line)) {
+                    excludedCount++;
+                } else {
+                    channels.push({
+                        name: currentName,
+                        url: line
+                    });
+                }
 
                 currentName = "";
             }
         }
 
-        renderChannels(channels);
+        renderChannels();
 
         if (channels.length === 0) {
-            countEl.textContent = "채널 0개";
-            setStatus("M3U 파일에서 채널을 찾지 못했습니다.", true);
+            countEl.textContent =
+                `채널 0개 (jmp2.uk 제외 ${excludedCount}개)`;
+            setStatus("표시할 채널이 없습니다. M3U 파일을 확인하세요.", true);
         } else {
-            countEl.textContent = `채널 ${channels.length}개`;
+            countEl.textContent =
+                `채널 ${channels.length}개 · jmp2.uk 제외 ${excludedCount}개`;
             setStatus("채널을 선택하세요.");
         }
-
     } catch (error) {
         console.error("M3U 로드 실패:", error);
         countEl.textContent = "목록 로드 실패";
-        setStatus(
-            "목록 로드 오류: " + error.message +
-            " (개발자 도구 Console 확인)",
-            true
-        );
+        setStatus("목록 로드 오류: " + error.message, true);
     }
 }
 
 // 채널 목록 표시
-function renderChannels(list) {
+function renderChannels() {
     channelsEl.replaceChildren();
 
-    for (const channel of list) {
+    const query = searchEl.value.trim().toLowerCase();
+    const filteredChannels = channels.filter(channel =>
+        channel.name.toLowerCase().includes(query)
+    );
+
+    for (const channel of filteredChannels) {
         const item = document.createElement("div");
         item.className = "channel";
         item.textContent = channel.name;
@@ -299,11 +302,10 @@ function renderChannels(list) {
 
         if (channel.url === selectedUrl) {
             item.classList.add("active");
-            selectedElement = item;
         }
 
         item.addEventListener("click", () => {
-            playChannel(channel, item);
+            playChannel(channel);
         });
 
         channelsEl.appendChild(item);
@@ -311,34 +313,18 @@ function renderChannels(list) {
 }
 
 // 채널 검색
-searchEl.addEventListener("input", () => {
-    const query = searchEl.value.trim().toLowerCase();
-
-    renderChannels(
-        channels.filter(channel =>
-            channel.name.toLowerCase().includes(query)
-        )
-    );
-});
+searchEl.addEventListener("input", renderChannels);
 
 // 채널 재생
-function playChannel(channel, item) {
+function playChannel(channel) {
     selectedUrl = channel.url;
-    selectedElement = item;
-
-    document.querySelectorAll(".channel").forEach(el => {
-        el.classList.toggle("active", el === item);
-    });
-
     titleEl.textContent = channel.name;
     setStatus("스트림 연결 중...");
-
+    renderChannels();
     destroyPlayer();
 
-    // URL 형식 확인
     try {
         const parsed = new URL(channel.url);
-
         if (!["http:", "https:"].includes(parsed.protocol)) {
             throw new Error("HTTP 또는 HTTPS 주소가 아닙니다.");
         }
@@ -347,37 +333,34 @@ function playChannel(channel, item) {
         return;
     }
 
-    // HLS.js 지원 환경
     if (window.Hls && Hls.isSupported()) {
-        hls = new Hls({
+        const player = new Hls({
             enableWorker: true,
             manifestLoadingTimeOut: 20000,
             levelLoadingTimeOut: 20000,
             fragLoadingTimeOut: 30000
         });
 
-        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-            if (selectedUrl !== channel.url) return;
+        hls = player;
 
+        player.on(Hls.Events.MEDIA_ATTACHED, () => {
+            if (hls !== player || selectedUrl !== channel.url) return;
             setStatus("재생 목록을 불러오는 중...");
-            hls.loadSource(channel.url);
+            player.loadSource(channel.url);
         });
 
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            if (selectedUrl !== channel.url) return;
+        player.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (hls !== player || selectedUrl !== channel.url) return;
 
             setStatus("스트림 연결 완료. 재생을 시작합니다.");
-
             video.play().catch(error => {
                 console.warn("자동 재생 실패:", error);
-                setStatus(
-                    "연결됨. 영상의 재생 버튼을 눌러 주세요."
-                );
+                setStatus("연결됨. 영상의 재생 버튼을 눌러 주세요.");
             });
         });
 
-        hls.on(Hls.Events.ERROR, (event, data) => {
-            if (selectedUrl !== channel.url) return;
+        player.on(Hls.Events.ERROR, (event, data) => {
+            if (hls !== player || selectedUrl !== channel.url) return;
 
             console.error("HLS 오류:", {
                 type: data.type,
@@ -390,33 +373,19 @@ function playChannel(channel, item) {
 
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                 setStatus(
-                    "네트워크 오류: 스트림 주소, 서버 응답 또는 CORS를 확인하세요.",
+                    "네트워크 오류: 주소, 서버 응답 또는 CORS를 확인하세요.",
                     true
                 );
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                setStatus(
-                    "영상 디코딩 오류: 코덱 또는 스트림 형식을 확인하세요.",
-                    true
-                );
+                setStatus("영상 디코딩 오류: 코덱 또는 스트림 형식을 확인하세요.", true);
+                player.recoverMediaError();
             } else {
-                setStatus(
-                    "치명적인 HLS 오류: " + data.details,
-                    true
-                );
-            }
-
-            // HLS.js가 복구할 수 있는 미디어 오류만 복구 시도
-            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                hls.recoverMediaError();
+                setStatus("치명적인 HLS 오류: " + data.details, true);
             }
         });
 
-        hls.attachMedia(video);
-
-    } else if (
-        video.canPlayType("application/vnd.apple.mpegurl")
-    ) {
-        // 브라우저 자체 HLS 재생 지원
+        player.attachMedia(video);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = channel.url;
 
         video.play().catch(error => {
@@ -426,12 +395,8 @@ function playChannel(channel, item) {
                 true
             );
         });
-
     } else {
-        setStatus(
-            "이 브라우저에서는 HLS 재생을 지원하지 않습니다.",
-            true
-        );
+        setStatus("이 브라우저에서는 HLS 재생을 지원하지 않습니다.", true);
     }
 }
 
@@ -457,17 +422,9 @@ video.addEventListener("error", () => {
     setStatus(message, true);
 });
 
-video.addEventListener("playing", () => {
-    setStatus("재생 중");
-});
-
-video.addEventListener("waiting", () => {
-    setStatus("영상 데이터를 기다리는 중...");
-});
-
-video.addEventListener("stalled", () => {
-    setStatus("영상 데이터 수신이 지연되고 있습니다.", true);
-});
+video.addEventListener("playing", () => setStatus("재생 중"));
+video.addEventListener("waiting", () => setStatus("영상 데이터를 기다리는 중..."));
+video.addEventListener("stalled", () => setStatus("영상 데이터 수신이 지연되고 있습니다.", true));
 
 video.addEventListener("pause", () => {
     if (video.currentTime > 0 && !video.ended) {
