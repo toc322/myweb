@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K_IPTV Player (JSON)</title>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: white;
+    margin: 0;
+}
+
+#container {
+    display: flex;
+    height: 100vh;
+    height: 100dvh;
+}
+
+#sidebar {
+    width: 280px;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    background: #1a1a1a;
+    border-right: 1px solid #333;
+}
+
+#header {
+    padding: 15px;
+    border-bottom: 1px solid #333;
+}
+
+#header h2 {
+    margin: 0 0 10px;
+    font-size: 20px;
+}
+
+#search {
+    width: 100%;
+    padding: 10px;
+    background: #292929;
+    color: white;
+    border: 1px solid #444;
+    border-radius: 5px;
+}
+
+#channelCount {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #aaa;
+    line-height: 1.4;
+}
+
+#channels {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.channel {
+    padding: 12px;
+    border-bottom: 1px solid #2b2b2b;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.channel:hover { background: #333; }
+.channel.active { background: #164b83; }
+
+#main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+#playerHeader {
+    padding: 12px 16px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+}
+
+#channelTitle {
+    font-weight: bold;
+    margin-bottom: 6px;
+    overflow-wrap: anywhere;
+}
+
+#status {
+    font-size: 13px;
+    color: #bbb;
+    overflow-wrap: anywhere;
+}
+
+#status.error { color: #ff7777; }
+
+#videoArea {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    padding: 10px;
+}
+
+video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: black;
+}
+
+#hint {
+    padding: 8px 12px;
+    background: #1a1a1a;
+    color: #aaa;
+    font-size: 12px;
+}
+
+@media (max-width: 650px) {
+    #sidebar {
+        width: 38%;
+        min-width: 130px;
+    }
+
+    #header { padding: 10px; }
+    #header h2 { font-size: 16px; }
+
+    .channel {
+        padding: 10px 8px;
+        font-size: 13px;
+    }
+
+    #playerHeader { padding: 10px; }
+    #videoArea { padding: 4px; }
+}
+</style>
+</head>
+
+<body>
+<div id="container">
+    <aside id="sidebar">
+        <div id="header">
+            <h2>IPTV 채널</h2>
+            <input id="search" type="search"
+                   placeholder="채널 검색..."
+                   autocomplete="off">
+            <div id="channelCount">목록을 불러오는 중...</div>
+        </div>
+        <div id="channels"></div>
+    </aside>
+
+    <main id="main">
+        <div id="playerHeader">
+            <div id="channelTitle">채널을 선택하세요</div>
+            <div id="status">재생 대기 중</div>
+        </div>
+
+        <div id="videoArea">
+            <video id="video" controls playsinline preload="auto"></video>
+        </div>
+
+        <div id="hint">
+            중국어 및 CCTV 채널은 목록에서 제외됩니다. 재생 오류가 발생하면 상태 메시지를 확인하세요.
+        </div>
+    </main>
+</div>
+
+<script>
+"use strict";
+
+const jsonUrl = "https://raw.githubusercontent.com/kenpark76/kenpark76.github.io/refs/heads/main/koreatv.json";
+
+const video = document.getElementById("video");
+const channelsEl = document.getElementById("channels");
+const countEl = document.getElementById("channelCount");
+const statusEl = document.getElementById("status");
+const titleEl = document.getElementById("channelTitle");
+const searchEl = document.getElementById("search");
+
+let channels = [];
+let hls = null;
+let selectedUrl = "";
+
+function setStatus(message, isError = false) {
+    statusEl.textContent = message;
+    statusEl.classList.toggle("error", isError);
+}
+
+function destroyPlayer() {
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+}
+
+// 채널명에 중국어(한자) 또는 CCTV 키워드가 포함되어 있는지 확인 (정규식 오타 수정 완료)
+function isExcludedChannel(name) {
+    const cjkRegex = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/;
+    const cctvRegex = /cctv/i;
+
+    return cjkRegex.test(name) || cctvRegex.test(name);
+}
+
+// JSON 파일 읽기 및 중국어/CCTV 채널 제외 필터링
+async function loadChannels() {
+    countEl.textContent = "목록을 불러오는 중...";
+
+    try {
+        const response = await fetch(jsonUrl, { cache: "no-store" });
+
+        if (!response.ok) {
+            throw new Error("JSON HTTP 오류: " + response.status);
+        }
+
+        const data = await response.json();
+        
+        channels = [];
+        let excludedCount = 0;
+
+        if (Array.isArray(data)) {
+            for (const item of data) {
+                const name = item.name ? item.name.trim() : "이름 없는 채널";
+                
+                let streamUrl = "";
+                if (Array.isArray(item.uris)) {
+                    streamUrl = item.uris[0] ? item.uris[0].trim() : "";
+                } else if (typeof item.uris === "string") {
+                    streamUrl = item.uris.trim();
+                }
+
+                if (streamUrl) {
+                    if (isExcludedChannel(name)) {
+                        excludedCount++;
+                    } else {
+                        channels.push({
+                            name: name,
+                            url: streamUrl
+                        });
+                    }
+                }
+            }
+        }
+
+        renderChannels();
+
+        if (channels.length === 0) {
+            countEl.textContent = `채널 0개 (제외 ${excludedCount}개)`;
+            setStatus("표시할 채널이 없습니다. JSON 구조를 확인하세요.", true);
+        } else {
+            countEl.textContent = `채널 ${channels.length}개 · 제외 ${excludedCount}개`;
+            setStatus("채널을 선택하세요.");
+        }
+    } catch (error) {
+        console.error("JSON 로드 실패:", error);
+        countEl.textContent = "목록 로드 실패";
+        setStatus("목록 로드 오류: " + error.message, true);
+    }
+}
+
+// 채널 목록 표시
+function renderChannels() {
+    channelsEl.replaceChildren();
+
+    const query = searchEl.value.trim().toLowerCase();
+    const filteredChannels = channels.filter(channel =>
+        channel.name.toLowerCase().includes(query)
+    );
+
+    for (const channel of filteredChannels) {
+        const item = document.createElement("div");
+        item.className = "channel";
+        item.textContent = channel.name;
+        item.title = channel.name;
+
+        if (channel.url === selectedUrl) {
+            item.classList.add("active");
+        }
+
+        item.addEventListener("click", () => {
+            playChannel(channel);
+        });
+
+        channelsEl.appendChild(item);
+    }
+}
+
+// 채널 검색
+searchEl.addEventListener("input", renderChannels);
+
+// 채널 재생
+function playChannel(channel) {
+    selectedUrl = channel.url;
+    titleEl.textContent = channel.name;
+    setStatus("스트림 연결 중...");
+    renderChannels();
+    destroyPlayer();
+
+    try {
+        const parsed = new URL(channel.url);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+            throw new Error("HTTP 또는 HTTPS 주소가 아닙니다.");
+        }
+    } catch (error) {
+        setStatus("잘못된 채널 주소: " + error.message, true);
+        return;
+    }
+
+    if (window.Hls && Hls.isSupported()) {
+        const player = new Hls({
+            enableWorker: true,
+            manifestLoadingTimeOut: 20000,
+            levelLoadingTimeOut: 20000,
+            fragLoadingTimeOut: 30000
+        });
+
+        hls = player;
+
+        player.on(Hls.Events.MEDIA_ATTACHED, () => {
+            if (hls !== player || selectedUrl !== channel.url) return;
+            setStatus("재생 목록을 불러오는 중...");
+            player.loadSource(channel.url);
+        });
+
+        player.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (hls !== player || selectedUrl !== channel.url) return;
+
+            setStatus("스트림 연결 완료. 재생을 시작합니다.");
+            video.play().catch(error => {
+                console.warn("자동 재생 실패:", error);
+                setStatus("연결됨. 영상의 재생 버튼을 눌러 주세요.");
+            });
+        });
+
+        player.on(Hls.Events.ERROR, (event, data) => {
+            if (hls !== player || selectedUrl !== channel.url) return;
+
+            console.error("HLS 오류:", {
+                type: data.type,
+                details: data.details,
+                fatal: data.fatal,
+                response: data.response
+            });
+
+            if (!data.fatal) return;
+
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                setStatus("네트워크 오류: 주소, 서버 응답 또는 CORS를 확인하세요.", true);
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                setStatus("영상 디코딩 오류: 코덱 또는 스트림 형식을 확인하세요.", true);
+                player.recoverMediaError();
+            } else {
+                setStatus("치명적인 HLS 오류: " + data.details, true);
+            }
+        });
+
+        player.attachMedia(video);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = channel.url;
+
+        video.play().catch(error => {
+            console.error("브라우저 재생 오류:", error);
+            setStatus("재생 실패: 브라우저 콘솔과 스트림 주소를 확인하세요.", true);
+        });
+    } else {
+        setStatus("이 브라우저에서는 HLS 재생을 지원하지 않습니다.", true);
+    }
+}
+
+// 브라우저 미디어 오류 확인
+video.addEventListener("error", () => {
+    if (!video.error) return;
+
+    const errors = {
+        1: "재생이 취소되었습니다.",
+        2: "네트워크 오류로 영상을 가져오지 못했습니다.",
+        3: "영상 디코딩에 실패했습니다.",
+        4: "지원하지 않는 영상 형식이거나 주소에 접근할 수 없습니다."
+    };
+
+    const message = errors[video.error.code] || "알 수 없는 영상 오류";
+
+    console.error("Video 오류:", {
+        code: video.error.code,
+        message: video.error.message
+    });
+
+    setStatus(message, true);
+});
+
+video.addEventListener("playing", () => setStatus("재생 중"));
+video.addEventListener("waiting", () => setStatus("영상 데이터를 기다리는 중..."));
+video.addEventListener("stalled", () => setStatus("영상 데이터 수신이 지연되고 있습니다.", true));
+
+video.addEventListener("pause", () => {
+    if (video.currentTime > 0 && !video.ended) {
+        setStatus("일시 정지");
+    }
+});
+
+loadChannels();
+</script>
+</body>
+</html>
